@@ -1,32 +1,61 @@
-# html_generator.py
 def build_html_from_questions(questions, title="Quiz"):
-    html = f"""<!doctype html><html><head><meta charset="utf-8"><title>{title}</title>
-    <style>
-    body{{font-family:Arial,sans-serif;padding:20px}}
-    .question-box{{margin-bottom:20px;padding:15px;border-radius:8px;border:1px solid #ddd}}
-    .correct{{color:green;font-weight:bold}}
-    .wrong{{color:red}}
-    .solution{{background:#f9f9f9;padding:10px;border-radius:6px;margin-top:8px}}
-    .result-box{{margin-top:30px;padding:18px;border-radius:8px;border:2px solid #222;background:#f0fff0}}
-    </style>
-    </head><body>
-    <h1>{title}</h1>
-    <div id="content">"""
-    correct_count = 0
-    for i,q in enumerate(questions, start=1):
-        ans = q.get("answer","")
-        html += f'<div class="question-box"><h3>Q{i}. {q.get("q","")}</h3>'
-        opts = q.get("options",[])
-        letters = ["A","B","C","D"]
-        for idx,opt in enumerate(opts):
-            letter = letters[idx] if idx < len(letters) else f"opt{idx}"
-            if letter == ans:
-                html += f'<p class="correct">{letter}. {opt} ✔</p>'
-                correct_count += 1
-            else:
-                html += f'<p>{letter}. {opt}</p>'
-        html += f'<div class="solution"><b>Solution:</b><div>{q.get("solution","")}</div></div></div>'
-    total = len(questions)
-    score = int((correct_count/total)*100) if total>0 else 0
-    html += f'</div><div class="result-box"><h2>Result</h2><p>Correct: {correct_count}</p><p>Wrong: {total-correct_count}</p><p>Score: {score}%</p></div></body></html>'
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{title}</title>
+<style>
+body {{ font-family: Arial; }}
+.question {{ margin-bottom: 20px; padding: 10px; border: 1px solid #ccc; border-radius:5px; }}
+.option {{ margin: 5px 0; cursor: pointer; padding:5px; border-radius:3px; }}
+.option.correct {{ background-color: #c8e6c9; }}
+.option.wrong {{ background-color: #ffcdd2; }}
+.solution {{ display:none; color:#1565c0; }}
+</style>
+</head>
+<body>
+<h2>{title}</h2>
+<form id="quizForm">
+"""
+
+    for idx, q in enumerate(questions):
+        html += f"<div class='question'><p>Q{idx+1}: {q['q']}</p>"
+        for opt_idx, opt in enumerate(q['options']):
+            html += f"<div class='option'><input type='radio' name='q{idx}' value='{chr(65+opt_idx)}'> {opt}</div>"
+        html += f"<p class='solution' id='sol{idx}'>Solution: {q['solution']} | Correct Answer: {q['answer']}</p>"
+        html += "</div>"
+
+    html += """
+<input type="button" value="Submit" onclick="checkQuiz()">
+</form>
+<p id="result"></p>
+<script>
+function checkQuiz() {
+    let correct = 0;
+    let total = 0;
+    let results = '';
+    const questions = document.querySelectorAll('.question');
+    questions.forEach((q, idx) => {
+        const selected = q.querySelector('input[type=radio]:checked');
+        const sol = q.querySelector('.solution');
+        if(!selected) {
+            results += 'Q'+(idx+1)+' not answered.<br>';
+            sol.style.display='block';
+            return;
+        }
+        total++;
+        if(selected.value == questions[idx].querySelector('.solution').innerText.split('Correct Answer: ')[1].trim()) {
+            correct++;
+            selected.parentElement.classList.add('correct');
+        } else {
+            selected.parentElement.classList.add('wrong');
+            sol.style.display='block';
+        }
+    });
+    document.getElementById('result').innerHTML = 'Total Correct: '+correct+' / '+questions.length;
+}
+</script>
+</body>
+</html>
+"""
     return html
