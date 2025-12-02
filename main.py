@@ -6,7 +6,7 @@ import json
 # -----------------------------
 # CONFIG
 # -----------------------------
-BOT_TOKEN = "8343622832:AAEtx-oxmBImv_SLPAGF8Z42aPUXdzTGT9c"
+BOT_TOKEN = "8585007953:AAEqP3K3_5y43YRoYc4h99Lzlg9uE-1rAHo"
 GEMINI_API_KEY = "AIzaSyB5TA6nDIj8VARsC4LPfdxu7_HBnetmPg8"
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -67,7 +67,7 @@ def is_auth(uid):
 
 @bot.message_handler(commands=['adduser'])
 def add_user(msg):
-    if str(msg.from_user.id) != "7447651332":
+    if str(msg.from_user.id) != "8226637107":
         return bot.reply_to(msg, "❌ Only owner can add users.")
 
     try:
