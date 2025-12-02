@@ -1,4 +1,3 @@
-# main.py
 import os
 import json
 import requests
@@ -12,12 +11,12 @@ BOT_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 app = Flask(__name__)
 
-def download_file(file_path):
-    r = requests.get(f"{BOT_URL}/getFile", params={"file_id": file_path})
+def download_file(file_id):
+    r = requests.get(f"{BOT_URL}/getFile", params={"file_id": file_id})
     r.raise_for_status()
     file_info = r.json()
-    file_rel = file_info["result"]["file_path"]
-    download_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_rel}"
+    file_path = file_info["result"]["file_path"]
+    download_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
     rr = requests.get(download_url)
     rr.raise_for_status()
     return rr.content
@@ -30,7 +29,6 @@ def send_document(chat_id, filename, content_bytes):
     data = {"chat_id": chat_id}
     requests.post(f"{BOT_URL}/sendDocument", data=data, files=files)
 
-# SIMPLE WEBHOOK — NO SECRET PATH
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
     data = request.json
@@ -53,7 +51,7 @@ def webhook():
         try:
             file_bytes = download_file(file_id)
         except Exception as e:
-            send_message(chat_id, "Failed to download file: " + str(e))
+            send_message(chat_id, f"Failed to download file: {e}")
             return jsonify({"ok": False}), 500
 
         tmp_pdf = f"/tmp/{filename}"
@@ -63,26 +61,25 @@ def webhook():
         try:
             extracted_text = extract_text_from_pdf(tmp_pdf)
         except Exception as e:
-            send_message(chat_id, "OCR failed: " + str(e))
+            send_message(chat_id, f"OCR failed: {e}")
             return jsonify({"ok": False}), 500
 
-        send_message(chat_id, "OCR done — sending text to Gemini to extract Q/A ...")
+        send_message(chat_id, "OCR done — sending text to Gemini AI for answers...")
 
         try:
             questions_json = parse_questions_with_gemini(extracted_text)
         except Exception as e:
-            send_message(chat_id, "Parsing with Gemini failed: " + str(e))
+            send_message(chat_id, f"Gemini parsing failed: {e}")
             return jsonify({"ok": False}), 500
 
-        send_message(chat_id, f"Parsed {len(questions_json)} questions. Generating HTML...")
+        send_message(chat_id, f"Parsed {len(questions_json)} questions. Generating HTML quiz...")
 
         html = build_html_from_questions(questions_json, title=filename)
         html_bytes = html.encode("utf-8")
         html_filename = filename.replace(".pdf", "") + "_quiz.html"
 
         send_document(chat_id, html_filename, html_bytes)
-
-        send_message(chat_id, "Finished — check the HTML file. 👍")
+        send_message(chat_id, "Finished — check your HTML quiz! 👍")
         return jsonify({"ok": True})
 
     send_message(chat_id, "Please send a PDF document containing the quiz.")
