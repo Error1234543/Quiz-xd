@@ -5,3 +5,4 @@ pillow
 pytesseract
 PyPDF2
 google-cloud-vision
+gunicorn
