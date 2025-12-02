@@ -1,61 +1,93 @@
-from flask import Flask, request
-import telebot
+# main.py
 import os
+import json
+import requests
+from flask import Flask, request, jsonify
+from ocr_utils import extract_text_from_pdf
+from gemini_utils import parse_questions_with_gemini
+from html_generator import build_html_from_questions
 
-from ocr_utils import extract_text_from_image
-from gemini_utils import ask_gemini
+TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+BOT_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-TOKEN = "8343622832:AAEtx-oxmBImv_SLPAGF8Z42aPUXdzTGT9c"
-bot = telebot.TeleBot(TOKEN)
-server = Flask(__name__)
+app = Flask(__name__)
 
-# -----------------------------
-# 🔥 WEBHOOK ROUTE (MUST MATCH EXACTLY)
-# -----------------------------
-@server.route(f"/{TOKEN}", methods=["POST"])
-def telegram_webhook():
-    json_data = request.get_data().decode('utf-8')
-    update = telebot.types.Update.de_json(json_data)
-    bot.process_new_updates([update])
-    return "OK", 200
+def download_file(file_path):
+    r = requests.get(f"{BOT_URL}/getFile", params={"file_id": file_path})
+    r.raise_for_status()
+    file_info = r.json()
+    file_rel = file_info["result"]["file_path"]
+    download_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_rel}"
+    rr = requests.get(download_url)
+    rr.raise_for_status()
+    return rr.content
 
-# Simple alive check
-@server.route("/")
-def home():
-    return "Bot Running Successfully 🔥"
+def send_message(chat_id, text):
+    requests.post(f"{BOT_URL}/sendMessage", json={"chat_id": chat_id, "text": text})
 
-# -----------------------------
-# COMMAND HANDLERS
-# -----------------------------
+def send_document(chat_id, filename, content_bytes):
+    files = {"document": (filename, content_bytes)}
+    data = {"chat_id": chat_id}
+    requests.post(f"{BOT_URL}/sendDocument", data=data, files=files)
 
-@bot.message_handler(commands=['start'])
-def start(msg):
-    bot.reply_to(msg, "🔥 Webhook Bot Working!\n📸 Send me an image and I will extract text using OCR.")
+# SIMPLE WEBHOOK — NO SECRET PATH
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def webhook():
+    data = request.json
+    if not data:
+        return jsonify({"ok": False}), 400
 
-@bot.message_handler(commands=['ask'])
-def ask_ai(msg):
-    q = msg.text.replace("/ask", "").strip()
-    if not q:
-        bot.reply_to(msg, "❗ /ask <question>")
-        return
+    msg = data.get("message") or data.get("edited_message")
+    if not msg:
+        return jsonify({"ok": True})
 
-    ans = ask_gemini(q)
-    bot.reply_to(msg, ans)
+    chat_id = msg["chat"]["id"]
 
-# -----------------------------
-# IMAGE OCR
-# -----------------------------
-@bot.message_handler(content_types=['photo'])
-def photo_handler(message):
-    file_info = bot.get_file(message.photo[-1].file_id)
-    file_data = bot.download_file(file_info.file_path)
+    doc = msg.get("document")
+    if doc:
+        filename = doc.get("file_name", "file.pdf")
+        file_id = doc["file_id"]
 
-    text = extract_text_from_image(file_data)
-    bot.reply_to(message, f"📝 *Extracted OCR Text:*\n\n{text}", parse_mode="Markdown")
+        send_message(chat_id, "Processing your PDF — started OCR & parsing. 🛠️")
 
-# -----------------------------
-# START SERVER
-# -----------------------------
+        try:
+            file_bytes = download_file(file_id)
+        except Exception as e:
+            send_message(chat_id, "Failed to download file: " + str(e))
+            return jsonify({"ok": False}), 500
+
+        tmp_pdf = f"/tmp/{filename}"
+        with open(tmp_pdf, "wb") as f:
+            f.write(file_bytes)
+
+        try:
+            extracted_text = extract_text_from_pdf(tmp_pdf)
+        except Exception as e:
+            send_message(chat_id, "OCR failed: " + str(e))
+            return jsonify({"ok": False}), 500
+
+        send_message(chat_id, "OCR done — sending text to Gemini to extract Q/A ...")
+
+        try:
+            questions_json = parse_questions_with_gemini(extracted_text)
+        except Exception as e:
+            send_message(chat_id, "Parsing with Gemini failed: " + str(e))
+            return jsonify({"ok": False}), 500
+
+        send_message(chat_id, f"Parsed {len(questions_json)} questions. Generating HTML...")
+
+        html = build_html_from_questions(questions_json, title=filename)
+        html_bytes = html.encode("utf-8")
+        html_filename = filename.replace(".pdf", "") + "_quiz.html"
+
+        send_document(chat_id, html_filename, html_bytes)
+
+        send_message(chat_id, "Finished — check the HTML file. 👍")
+        return jsonify({"ok": True})
+
+    send_message(chat_id, "Please send a PDF document containing the quiz.")
+    return jsonify({"ok": True})
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    server.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
