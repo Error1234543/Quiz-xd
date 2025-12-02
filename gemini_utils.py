@@ -1,7 +1,12 @@
 import requests
+import json
 import os
 
+# Gemini API Key (set as environment variable)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# Default Gemini API URL (no need to set environment variable)
+GEMINI_API_URL = "https://api.gemini.ai/v1/generate"
 
 def parse_questions_with_gemini(text):
     """
@@ -16,6 +21,7 @@ def parse_questions_with_gemini(text):
       ...
     ]
     """
+
     prompt = f"""
 Extract all questions from this text.
 Format JSON:
@@ -44,8 +50,13 @@ Text:
         "max_tokens": 3000
     }
 
-    response = requests.post("https://api.gemini.ai/v1/generate", headers=headers, json=payload)
-    response.raise_for_status()
-    result = response.json()
-    # Assuming AI returns JSON string in 'text' field
-    return json.loads(result["text"])
+    try:
+        response = requests.post(GEMINI_API_URL, headers=headers, json=payload, timeout=60)
+        response.raise_for_status()
+        result = response.json()
+        # Assuming AI returns JSON string in 'text' field
+        return json.loads(result.get("text", "[]"))
+    except requests.exceptions.RequestException as e:
+        print("Gemini API call failed:", e)
+        # Return empty list if API fails, bot will not crash
+        return []
