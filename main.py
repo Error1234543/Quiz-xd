@@ -6,17 +6,20 @@ from ocr_utils import extract_text_from_pdf
 from gemini_utils import parse_questions_with_gemini
 from html_generator import build_html_from_questions
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+if not TELEGRAM_TOKEN:
+    raise Exception("TELEGRAM_TOKEN env variable missing!")
+
 BOT_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 app = Flask(__name__)
 
-def download_file(file_path):
-    r = requests.get(f"{BOT_URL}/getFile", params={"file_id": file_path})
+def download_file(file_id):
+    r = requests.get(f"{BOT_URL}/getFile", params={"file_id": file_id})
     r.raise_for_status()
     file_info = r.json()
-    file_rel = file_info["result"]["file_path"]
-    download_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_rel}"
+    file_path = file_info["result"]["file_path"]
+    download_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
     rr = requests.get(download_url)
     rr.raise_for_status()
     return rr.content
@@ -42,46 +45,49 @@ def webhook():
     chat_id = msg["chat"]["id"]
 
     doc = msg.get("document")
-    if doc:
-        filename = doc.get("file_name", "file.pdf")
-        file_id = doc["file_id"]
-        send_message(chat_id, "Processing your PDF — OCR & parsing started. 🛠️")
-
-        try:
-            file_bytes = download_file(file_id)
-        except Exception as e:
-            send_message(chat_id, "Failed to download file: " + str(e))
-            return jsonify({"ok": False}), 500
-
-        tmp_pdf = f"/tmp/{filename}"
-        with open(tmp_pdf, "wb") as f:
-            f.write(file_bytes)
-
-        try:
-            extracted_text = extract_text_from_pdf(tmp_pdf)
-        except Exception as e:
-            send_message(chat_id, "OCR failed: " + str(e))
-            return jsonify({"ok": False}), 500
-
-        send_message(chat_id, "OCR done — sending text to Gemini to extract Q/A ...")
-
-        try:
-            questions_json = parse_questions_with_gemini(extracted_text)
-        except Exception as e:
-            send_message(chat_id, "Parsing with Gemini failed: " + str(e))
-            return jsonify({"ok": False}), 500
-
-        send_message(chat_id, f"Parsed {len(questions_json)} questions. Generating HTML...")
-
-        html = build_html_from_questions(questions_json, title=filename)
-        html_bytes = html.encode("utf-8")
-        html_filename = filename.replace(".pdf", "") + "_quiz.html"
-
-        send_document(chat_id, html_filename, html_bytes)
-        send_message(chat_id, "Finished — check the HTML file. 👍")
+    if not doc:
+        send_message(chat_id, "Please send a PDF document containing the quiz.")
         return jsonify({"ok": True})
 
-    send_message(chat_id, "Please send a PDF document containing the quiz.")
+    filename = doc.get("file_name", "file.pdf")
+    file_id = doc["file_id"]
+    send_message(chat_id, "Processing your PDF — OCR & parsing started. 🛠️")
+
+    try:
+        file_bytes = download_file(file_id)
+    except Exception as e:
+        send_message(chat_id, "Failed to download file: " + str(e))
+        return jsonify({"ok": False}), 500
+
+    tmp_pdf = f"/tmp/{filename}"
+    with open(tmp_pdf, "wb") as f:
+        f.write(file_bytes)
+
+    # OCR extraction
+    try:
+        extracted_text = extract_text_from_pdf(tmp_pdf)
+    except Exception as e:
+        send_message(chat_id, "OCR failed: " + str(e))
+        return jsonify({"ok": False}), 500
+
+    send_message(chat_id, "OCR done — sending text to Gemini to extract Q/A ...")
+
+    # Gemini JSON parsing
+    try:
+        questions_json = parse_questions_with_gemini(extracted_text)
+    except Exception as e:
+        send_message(chat_id, "Parsing with Gemini failed: " + str(e))
+        return jsonify({"ok": False}), 500
+
+    send_message(chat_id, f"Parsed {len(questions_json)} questions. Generating HTML...")
+
+    # HTML generation
+    html = build_html_from_questions(questions_json, title=filename)
+    html_bytes = html.encode("utf-8")
+    html_filename = filename.replace(".pdf", "") + "_quiz.html"
+
+    send_document(chat_id, html_filename, html_bytes)
+    send_message(chat_id, "Finished — check the HTML file. 👍")
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
