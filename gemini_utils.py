@@ -1,62 +1,22 @@
+
 import requests
-import json
-import os
 
-# Gemini API Key (set as environment variable)
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+API_KEY = "YOUR_GEMINI_API_KEY"
+URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + API_KEY
 
-# Default Gemini API URL (no need to set environment variable)
-GEMINI_API_URL = "https://api.gemini.ai/v1/generate"
-
-def parse_questions_with_gemini(text):
-    """
-    Send extracted text to Gemini AI to find:
-    - Questions
-    - Options A/B/C/D
-    - Correct answer
-    - Solution
-    Returns JSON list:
-    [
-      {"q": ..., "options": [...], "answer": ..., "solution": ...},
-      ...
-    ]
-    """
-
+def extract_questions_from_ai(text):
     prompt = f"""
-Extract all questions from this text.
-Format JSON:
+Extract all MCQ in Gujarati.
+Output strictly in JSON:
 [
-  {{
-    "q": "Question text",
-    "options": ["A text", "B text", "C text", "D text"],
-    "answer": "A/B/C/D",
-    "solution": "Solution text"
-  }},
-  ...
+ {{"q":"...", "options":["A","B","C","D"], "answer_index":0}},
 ]
-Keep text exactly as in PDF.
 Text:
 {text}
 """
 
-    headers = {
-        "Authorization": f"Bearer {GEMINI_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    res = requests.post(URL, json={"contents":[{"parts":[{"text":prompt}]}]})
+    out = res.json()["candidates"][0]["content"]["parts"][0]["text"]
 
-    payload = {
-        "model": "gemini",
-        "prompt": prompt,
-        "max_tokens": 3000
-    }
-
-    try:
-        response = requests.post(GEMINI_API_URL, headers=headers, json=payload, timeout=60)
-        response.raise_for_status()
-        result = response.json()
-        # Assuming AI returns JSON string in 'text' field
-        return json.loads(result.get("text", "[]"))
-    except requests.exceptions.RequestException as e:
-        print("Gemini API call failed:", e)
-        # Return empty list if API fails, bot will not crash
-        return []
+    import json
+    return json.loads(out)
