@@ -1,37 +1,43 @@
-
-import os, io
-from google.cloud import vision_v1
 from pdf2image import convert_from_path
 from PIL import Image
 import pytesseract
+from PyPDF2 import PdfReader
+import io
+import os
+from google.cloud import vision
 
-# GOOGLE_APPLICATION_CREDENTIALS setup
-creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-if creds_json:
-    path = "/tmp/gcloud_creds.json"
-    with open(path, "w") as f:
-        f.write(creds_json)
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = path
-
-def image_to_text_with_vision(image_pil):
-    client = vision_v1.ImageAnnotatorClient()
-    buffered = io.BytesIO()
-    image_pil.save(buffered, format="PNG")
-    content = buffered.getvalue()
-    image = vision_v1.Image(content=content)
-    response = client.document_text_detection(image=image)
-    return response.full_text_annotation.text
-
-def pdf_page_images(pdf_path):
-    return convert_from_path(pdf_path, dpi=300)
+# Optional: Google Vision credentials
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/path/to/your/credentials.json"
 
 def extract_text_from_pdf(pdf_path):
-    pages = pdf_page_images(pdf_path)
-    all_text = []
-    for page in pages:
-        try:
-            text = image_to_text_with_vision(page)
-        except Exception:
-            text = pytesseract.image_to_string(page, lang="guj+eng")
-        all_text.append(text)
-    return "\n\n".join(all_text)
+    text = ""
+
+    # Try direct PDF text extraction first
+    try:
+        reader = PdfReader(pdf_path)
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+    except:
+        pass
+
+    # If no text extracted, fallback to OCR
+    if not text.strip():
+        # Convert PDF to images
+        images = convert_from_path(pdf_path)
+        for img in images:
+            # Google Vision OCR preferred
+            try:
+                client = vision.ImageAnnotatorClient()
+                img_byte_arr = io.BytesIO()
+                img.save(img_byte_arr, format='PNG')
+                image = vision.Image(content=img_byte_arr.getvalue())
+                response = client.text_detection(image=image)
+                for annotation in response.text_annotations:
+                    text += annotation.description + "\n"
+            except:
+                # Fallback to pytesseract
+                text += pytesseract.image_to_string(img, lang='guj') + "\n"
+
+    return text
