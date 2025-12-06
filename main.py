@@ -7,7 +7,7 @@ import json
 # CONFIG
 # -----------------------------
 BOT_TOKEN = "8585007953:AAEqP3K3_5y43YRoYc4h99Lzlg9uE-1rAHo"
-GEMINI_API_KEY = "AIzaSyB5TA6nDIj8VARsC4LPfdxu7_HBnetmPg8"
+GEMINI_API_KEY = ""
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
